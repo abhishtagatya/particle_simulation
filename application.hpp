@@ -28,6 +28,7 @@ protected:
 	// Variables (Shaders)
 protected:
 	ShaderProgram pulsating_particle_program;
+	ShaderProgram attracting_particle_program;
 
 	// Variables (Frame Buffers)
 protected:
@@ -53,11 +54,16 @@ protected:
 	// The particle buffer.
 	GLuint particle_buffer;
 
+	// -- Attracting Particles --
+	glm::vec3 attraction_point = glm::vec3(0.0f, 0.0f, 0.0f);
+	float attraction_force = 9.8f;
+
 protected:
 	/** The constants identifying what can be displayed on the screen. */
 	const int DISPLAY_PULSATING_SCENE = 0;
+	const int DISPLAY_ATTRACTING_SCENE = 1;
 	
-	const char* DISPLAY_NAMES[1] = { "Sphere Pulsating Simulation" };
+	const char* DISPLAY_NAMES[2] = { "Sphere Pulsating Simulation", "Attracting Simulation"};
 
 	int display_mode = DISPLAY_PULSATING_SCENE;
 
@@ -107,6 +113,9 @@ public:
 public:
 	/** Render Sphere Pulsating Simulation (DISPLAY_PULSATING_SCENE) */
 	void render_pulsating_simulation();
+
+	/** Render Attracting Particles Simulation (DISPLAY_ATTRACTING_SCENE) */
+	void render_attracting_simulation();
 
 public:
 	// Render

@@ -35,6 +35,12 @@ void Application::compile_shaders() {
 	pulsating_particle_program.add_geometry_shader(lecture_shaders_path / "pulsating_particle.geom");
 	pulsating_particle_program.link();
 
+	attracting_particle_program = ShaderProgram();
+	attracting_particle_program.add_vertex_shader(lecture_shaders_path / "attracting_particle.vert");
+	attracting_particle_program.add_fragment_shader(lecture_shaders_path / "attracting_particle.frag");
+	attracting_particle_program.add_geometry_shader(lecture_shaders_path / "attracting_particle.geom");
+	attracting_particle_program.link();
+
 	std::cout << "Shaders are reloaded." << std::endl;
 }
 
@@ -82,20 +88,30 @@ void Application::reset_particles() {
 	// Initialize random number generators
 	std::random_device rd;
 	std::mt19937 gen(rd());
-	std::uniform_int_distribution<> int_dist(0, 2);  // Random light id
-	std::uniform_real_distribution<> real_dist(0.0f, 5000.0f);  // Random delay in ms
+	std::uniform_real_distribution<> real_dist(0.0f, 5.0f);  // Random lifetime
 
-	// Zeroes the particle data.
-	for (int i = 0; i < current_particle_count; i++) {
-		// Initializes the particle.
-		Particle particle;
+	if (display_mode == DISPLAY_PULSATING_SCENE) {
 
-		// Initializes the particle position.
-		particle.position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-		particle.lifetime = real_dist(gen);
+		for (int i = 0; i < current_particle_count; i++) {
+			// Initializes the particle position.
+			particles[i].position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			particles[i].lifetime = real_dist(gen);
+			particles[i].remaining = particles[i].lifetime;
+		}
+	}
+	else if (display_mode == DISPLAY_ATTRACTING_SCENE) {
 
-		// Adds the particle to the list.
-		particles.push_back(particle);
+		std::uniform_real_distribution<> pos_dist(-50.0f, 50.f);  // Random position value
+		std::uniform_real_distribution<> vel_dist(-10.0f, 10.f);  // Random position value
+
+		// Zeroes the particle data.
+		for (int i = 0; i < current_particle_count; i++) {
+			// Initializes the particle position.
+			particles[i].position = glm::vec4(pos_dist(gen), pos_dist(gen), pos_dist(gen), 1.0f);
+			particles[i].velocity = glm::vec3(vel_dist(gen), vel_dist(gen), vel_dist(gen));
+			particles[i].lifetime = real_dist(gen);
+			particles[i].remaining = particles[i].lifetime;
+		}
 	}
 
 	// Updates the particle buffer.
@@ -153,6 +169,34 @@ void Application::render_pulsating_simulation() {
 	glDisable(GL_BLEND);
 }
 
+// Attracting Simulation (DISPLAY_ATTRACTING_SCENE)
+void Application::render_attracting_simulation() {
+
+	glDepthMask(GL_FALSE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+
+	attracting_particle_program.use();
+	attracting_particle_program.uniform("t_time", (float)elapsed_time);
+	attracting_particle_program.uniform("t_delta", (float)t_delta * 0.0001f);
+	attracting_particle_program.uniform("particle_size_vs", particle_size);
+	attracting_particle_program.uniform("attractor_point", attraction_point);
+	attracting_particle_program.uniform("attractor_force", attraction_force);
+
+	// Binds the particle texture.
+	glBindTextureUnit(0, star_tex);
+
+	// Binds the particle buffer.
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, particle_buffer);
+
+	// Renders the particles.
+	glBindVertexArray(empty_vao);
+	glDrawArrays(GL_POINTS, 0, current_particle_count);
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+}
+
 // Render Scene
 void Application::render() {
 	// Starts measuring the elapsed time.
@@ -172,6 +216,9 @@ void Application::render() {
 
 	if (display_mode == DISPLAY_PULSATING_SCENE) {
 		render_pulsating_simulation();
+	}
+	else if (display_mode == DISPLAY_ATTRACTING_SCENE) {
+		render_attracting_simulation();
 	}
 
 	// Resets the VAO and the program.
@@ -206,21 +253,30 @@ void Application::render_ui() {
 		reset_particles();
 	}
 
-	const char* particle_labels[15] = { 
-		"256", "512", "1024", "2048", "4096", 
+	if (ImGui::CollapsingHeader("Particle Settings")) {
+		const char* particle_labels[15] = {
+		"256", "512", "1024", "2048", "4096",
 		"8192", "16384", "32768", "65536", "131072",
 		"262144", "524288", "1048576", "2097152", "4194304"
-	};
-	int exponent = static_cast<int>(log2(current_particle_count) - 8);
-	if (ImGui::Combo("Particle Count", &exponent, particle_labels, IM_ARRAYSIZE(particle_labels))) {
-		desired_particle_count = static_cast<int>(glm::pow(2, exponent + 8));
-		update_particles_buffer();
+		};
+		int exponent = static_cast<int>(log2(current_particle_count) - 8);
+		if (ImGui::Combo("Particle Count", &exponent, particle_labels, IM_ARRAYSIZE(particle_labels))) {
+			desired_particle_count = static_cast<int>(glm::pow(2, exponent + 8));
+			update_particles_buffer();
+		}
+
+		ImGui::SliderFloat("Particle Size", &particle_size, 0.1f, 2.0f, "%.1f");
+
+		if (ImGui::Button("Reset Particles", ImVec2(150.f, 0.f))) {
+			reset_particles();
+		}
 	}
 
-	ImGui::SliderFloat("Particle Size", &particle_size, 0.1f, 2.0f, "%.1f");
-
-	if (ImGui::Button("Reset Particles", ImVec2(150.f, 0.f))) {
-		reset_particles();
+	if (ImGui::CollapsingHeader("Scene Controls")) {
+		if (display_mode == DISPLAY_ATTRACTING_SCENE) {
+			ImGui::InputFloat3("Center", glm::value_ptr(attraction_point));
+			ImGui::SliderFloat("Force", &attraction_force, 0.1f, 25.0f, "%.1f");
+		}
 	}
 
 	ImGui::End();
