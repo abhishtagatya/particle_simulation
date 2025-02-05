@@ -27,7 +27,7 @@ protected:
 	CameraUBO camera_ubo;
 	// Variables (Shaders)
 protected:
-	ShaderProgram star_particle_program;
+	ShaderProgram pulsating_particle_program;
 
 	// Variables (Frame Buffers)
 protected:
@@ -42,10 +42,10 @@ protected:
 	int current_particle_count = desired_particle_count;
 
 	// The maximum number of particles.
-	int max_particle_count = 131072;
+	int max_particle_count = 4194304;
 
 	// The particle size.
-	float particle_size = 0.1f;
+	float particle_size = 0.5f;
 
 	// The particle data.
 	std::vector<Particle> particles;
@@ -55,11 +55,11 @@ protected:
 
 protected:
 	/** The constants identifying what can be displayed on the screen. */
-	const int DISPLAY_STAR_PARTICLE = 0;
+	const int DISPLAY_PULSATING_SCENE = 0;
 	
-	const char* DISPLAY_NAMES[1] = { "Star Simulation" };
+	const char* DISPLAY_NAMES[1] = { "Sphere Pulsating Simulation" };
 
-	int display_mode = DISPLAY_STAR_PARTICLE;
+	int display_mode = DISPLAY_PULSATING_SCENE;
 
 	/** Global Time Delta */
 	float t_delta = 0;
@@ -105,8 +105,8 @@ public:
 
 	// Render Modes
 public:
-	/** Render Star Simulation (DISPLAY_STAR_PARTICLE) */
-	void render_star_simulation();
+	/** Render Sphere Pulsating Simulation (DISPLAY_PULSATING_SCENE) */
+	void render_pulsating_simulation();
 
 public:
 	// Render

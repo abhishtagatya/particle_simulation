@@ -5,6 +5,14 @@
 
 Application::Application(int initial_width, int initial_height, std::vector<std::string> arguments)
 	: PV227Application(initial_width, initial_height, arguments) {
+	
+	// Debug Memory Size
+	GLint size;
+	glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &size);
+	std::cout << "GL_MAX_SHADER_STORAGE_BLOCK_SIZE is " << size << " bytes." << std::endl;
+	std::cout << "Size of Particle: " << sizeof(Particle) << " bytes." << std::endl;
+	std::cout << "Alignment of Particle: " << alignof(Particle) << " bytes." << std::endl;
+	
 	Application::compile_shaders();
 	prepare_cameras();
 	prepare_materials();
@@ -21,11 +29,11 @@ void Application::compile_shaders() {
 	default_unlit_program = ShaderProgram(lecture_shaders_path / "object.vert", lecture_shaders_path / "unlit.frag");
 	default_lit_program = ShaderProgram(lecture_shaders_path / "object.vert", lecture_shaders_path / "lit.frag");
 
-	star_particle_program = ShaderProgram();
-	star_particle_program.add_vertex_shader(lecture_shaders_path / "star_particle.vert");
-	star_particle_program.add_fragment_shader(lecture_shaders_path / "star_particle.frag");
-	star_particle_program.add_geometry_shader(lecture_shaders_path / "star_particle.geom");
-	star_particle_program.link();
+	pulsating_particle_program = ShaderProgram();
+	pulsating_particle_program.add_vertex_shader(lecture_shaders_path / "pulsating_particle.vert");
+	pulsating_particle_program.add_fragment_shader(lecture_shaders_path / "pulsating_particle.frag");
+	pulsating_particle_program.add_geometry_shader(lecture_shaders_path / "pulsating_particle.geom");
+	pulsating_particle_program.link();
 
 	std::cout << "Shaders are reloaded." << std::endl;
 }
@@ -71,9 +79,6 @@ void Application::resize_fullscreen_textures() {}
 
 // Reset Particles
 void Application::reset_particles() {
-	// Initializes the particles.
-	//particles.clear();
-
 	// Initialize random number generators
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -99,12 +104,14 @@ void Application::reset_particles() {
 
 // Update Particles Buffer
 void Application::update_particles_buffer() {
+	current_particle_count = desired_particle_count;
+
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_buffer);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Particle) * current_particle_count, particles.data(), GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	std::cout << "Size of Particle: " << sizeof(Particle) << std::endl;
-	std::cout << "Alignment of Particle: " << alignof(Particle) << std::endl;
+	std::cout << "Desired particle count: " << current_particle_count << std::endl;
+	std::cout << "Particles buffer size: " << sizeof(Particle) * current_particle_count << " bytes." << std::endl;
 	std::cout << "Particles buffer updated." << std::endl;
 }
 
@@ -117,22 +124,20 @@ void Application::update(float delta) {
 	camera_ubo.set_view(lookAt(eye_position, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)));
 	camera_ubo.update_opengl_data();
 
-	current_particle_count = desired_particle_count;
-
 	// Updates the global time delta.
 	t_delta = delta;
 }
 
-// Star Simulation (DISPLAY_STAR_PARTICLE)
-void Application::render_star_simulation() {
+// Pulsating Simulation (DISPLAY_PULSATING_SCENE)
+void Application::render_pulsating_simulation() {
 	glDepthMask(GL_FALSE);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE);
 	
-	star_particle_program.use();
-	star_particle_program.uniform("t_time", (float)elapsed_time);
-	star_particle_program.uniform("t_delta", (float)t_delta * 0.0001f);
-	star_particle_program.uniform("particle_size_vs", particle_size);
+	pulsating_particle_program.use();
+	pulsating_particle_program.uniform("t_time", (float)elapsed_time);
+	pulsating_particle_program.uniform("t_delta", (float)t_delta * 0.0001f);
+	pulsating_particle_program.uniform("particle_size_vs", particle_size);
 
 	// Binds the particle texture.
 	glBindTextureUnit(0, star_tex);
@@ -165,8 +170,8 @@ void Application::render() {
 	// Binds the necessary buffers.
 	camera_ubo.bind_buffer_base(CameraUBO::DEFAULT_CAMERA_BINDING);
 
-	if (display_mode == DISPLAY_STAR_PARTICLE) {
-		render_star_simulation();
+	if (display_mode == DISPLAY_PULSATING_SCENE) {
+		render_pulsating_simulation();
 	}
 
 	// Resets the VAO and the program.
@@ -201,7 +206,11 @@ void Application::render_ui() {
 		reset_particles();
 	}
 
-	const char* particle_labels[10] = { "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072" };
+	const char* particle_labels[15] = { 
+		"256", "512", "1024", "2048", "4096", 
+		"8192", "16384", "32768", "65536", "131072",
+		"262144", "524288", "1048576", "2097152", "4194304"
+	};
 	int exponent = static_cast<int>(log2(current_particle_count) - 8);
 	if (ImGui::Combo("Particle Count", &exponent, particle_labels, IM_ARRAYSIZE(particle_labels))) {
 		desired_particle_count = static_cast<int>(glm::pow(2, exponent + 8));
