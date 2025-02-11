@@ -41,6 +41,12 @@ void Application::compile_shaders() {
 	attracting_particle_program.add_geometry_shader(lecture_shaders_path / "attracting_particle.geom");
 	attracting_particle_program.link();
 
+	multi_attracting_particle_program = ShaderProgram();
+	multi_attracting_particle_program.add_vertex_shader(lecture_shaders_path / "multi_attracting_particle.vert");
+	multi_attracting_particle_program.add_fragment_shader(lecture_shaders_path / "multi_attracting_particle.frag");
+	multi_attracting_particle_program.add_geometry_shader(lecture_shaders_path / "multi_attracting_particle.geom");
+	multi_attracting_particle_program.link();
+
 	std::cout << "Shaders are reloaded." << std::endl;
 }
 
@@ -71,7 +77,8 @@ void Application::prepare_lights() {}
 void Application::prepare_scene() {
 	// Initializes the particles.
 	particles.resize(max_particle_count); // Resize the vector to the maximum number of particles.
-	
+	attraction_points.resize(max_attractors); // Resize the vector to the maximum number of attractors.
+
 	// Initializes the particle buffer.
 	glGenBuffers(1, &particle_buffer);
 	reset_particles();
@@ -99,15 +106,14 @@ void Application::reset_particles() {
 			particles[i].remaining = particles[i].lifetime;
 		}
 	}
-	else if (display_mode == DISPLAY_ATTRACTING_SCENE) {
+	else if (display_mode == DISPLAY_SINGLE_ATTRACTOR_SCENE || display_mode == DISPLAY_MULTI_ATTRACTOR_SCENE) {
 
-		std::uniform_real_distribution<> pos_dist(-50.0f, 50.f);  // Random position value
 		std::uniform_real_distribution<> vel_dist(-10.0f, 10.f);  // Random position value
 
 		// Zeroes the particle data.
 		for (int i = 0; i < current_particle_count; i++) {
 			// Initializes the particle position.
-			particles[i].position = glm::vec4(pos_dist(gen), pos_dist(gen), pos_dist(gen), 1.0f);
+			particles[i].position = glm::vec4(random_inside_sphere(50.0f), 1.0f);
 			particles[i].velocity = glm::vec3(vel_dist(gen), vel_dist(gen), vel_dist(gen));
 			particles[i].lifetime = real_dist(gen);
 			particles[i].remaining = particles[i].lifetime;
@@ -116,6 +122,23 @@ void Application::reset_particles() {
 
 	// Updates the particle buffer.
 	update_particles_buffer();
+}
+
+glm::vec3 Application::random_inside_sphere(float radius) {
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> radius_dist(0.0f, 1.0f);
+
+	// Generate a random point in the unit cube
+	glm::vec3 point(dist(gen), dist(gen), dist(gen));
+
+	// Normalize the point to get a random direction on the unit sphere
+	point = glm::normalize(point);
+
+	// Scale by the cube root of a random radius to ensure uniform distribution
+	float r = std::cbrt(radius_dist(gen));
+	return point * (r * radius);
 }
 
 // Update Particles Buffer
@@ -169,7 +192,7 @@ void Application::render_pulsating_simulation() {
 	glDisable(GL_BLEND);
 }
 
-// Attracting Simulation (DISPLAY_ATTRACTING_SCENE)
+// Attracting Simulation (DISPLAY_SINGLE_ATTRACTOR_SCENE)
 void Application::render_attracting_simulation() {
 
 	glDepthMask(GL_FALSE);
@@ -180,8 +203,39 @@ void Application::render_attracting_simulation() {
 	attracting_particle_program.uniform("t_time", (float)elapsed_time);
 	attracting_particle_program.uniform("t_delta", (float)t_delta * 0.0001f);
 	attracting_particle_program.uniform("particle_size_vs", particle_size);
-	attracting_particle_program.uniform("attractor_point", attraction_point);
+	attracting_particle_program.uniform("attractor_point", attraction_points[0]);
 	attracting_particle_program.uniform("attractor_force", attraction_force);
+
+	// Binds the particle texture.
+	glBindTextureUnit(0, star_tex);
+
+	// Binds the particle buffer.
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, particle_buffer);
+
+	// Renders the particles.
+	glBindVertexArray(empty_vao);
+	glDrawArrays(GL_POINTS, 0, current_particle_count);
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+}
+
+// Attracting Simulation (DISPLAY_MULTI_ATTRACTOR_SCENE)
+void Application::render_multi_attracting_simulation() {
+
+	glDepthMask(GL_FALSE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+
+	multi_attracting_particle_program.use();
+	multi_attracting_particle_program.uniform("t_time", (float)elapsed_time);
+	multi_attracting_particle_program.uniform("t_delta", (float)t_delta * 0.0001f);
+	multi_attracting_particle_program.uniform("particle_size_vs", particle_size);
+	multi_attracting_particle_program.uniform("attractor_used", attractor_used);
+	for (int i = 0; i < attractor_used; i++) {
+		multi_attracting_particle_program.uniform("attractor_points[" + std::to_string(i) + "]", attraction_points[i]);
+	}
+	multi_attracting_particle_program.uniform("attractor_force", attraction_force);
 
 	// Binds the particle texture.
 	glBindTextureUnit(0, star_tex);
@@ -217,8 +271,11 @@ void Application::render() {
 	if (display_mode == DISPLAY_PULSATING_SCENE) {
 		render_pulsating_simulation();
 	}
-	else if (display_mode == DISPLAY_ATTRACTING_SCENE) {
+	else if (display_mode == DISPLAY_SINGLE_ATTRACTOR_SCENE) {
 		render_attracting_simulation();
+	}
+	else if (display_mode == DISPLAY_MULTI_ATTRACTOR_SCENE) {
+		render_multi_attracting_simulation();
 	}
 
 	// Resets the VAO and the program.
@@ -273,8 +330,13 @@ void Application::render_ui() {
 	}
 
 	if (ImGui::CollapsingHeader("Scene Controls")) {
-		if (display_mode == DISPLAY_ATTRACTING_SCENE) {
-			ImGui::InputFloat3("Center", glm::value_ptr(attraction_point));
+		if (display_mode == DISPLAY_SINGLE_ATTRACTOR_SCENE || display_mode == DISPLAY_MULTI_ATTRACTOR_SCENE) {
+			ImGui::SliderInt("Attractors Count", &attractor_used, 1, max_attractors);
+			
+			for (int i = 0; i < ((display_mode == DISPLAY_SINGLE_ATTRACTOR_SCENE) ? 1 : attractor_used); i++) {
+				std::string label = "Attractor " + std::to_string(i);
+				ImGui::InputFloat3(label.c_str(), glm::value_ptr(attraction_points[i]));
+			}
 			ImGui::SliderFloat("Force", &attraction_force, 0.1f, 25.0f, "%.1f");
 		}
 	}

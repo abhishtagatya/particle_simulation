@@ -15,9 +15,12 @@ layout (std140, binding = 0) uniform CameraBuffer
 	vec3 eye_position;		// The position of the eye in world space.
 };
 
+const int MAX_ATTRACTOR = 10;
+
 uniform float t_time;	// Time current time.
 uniform float t_delta;	// The time delta.
-uniform vec3 attractor_point; // The attractor point.
+uniform int attractor_used; // The number of attractors used.
+uniform vec3 attractor_points[MAX_ATTRACTOR] ; // The attractor points.
 uniform float attractor_force = 9.8f; // The force of the attractor.
 
 struct Particle {
@@ -75,11 +78,17 @@ void main()
 
 		particle.color = vec3(rv, gv, bv);
 	}
-    vec3 dir_to_attractor = normalize(attractor_point - particle.position.xyz) * attractor_force;
+
+	// Calculate the total force from all active attractors
+	vec3 total_force = vec3(0.0);
+	for (int i = 0; i < attractor_used; i++) {
+		vec3 dir_to_attractor = normalize(attractor_points[i] - particle.position.xyz);
+		total_force += dir_to_attractor * attractor_force;
+	}
 
 	// Update the particle's position based on its velocity
-	particle.position += vec4(particle.velocity, 0) * t_delta + 0.5f * vec4(dir_to_attractor, 0) * t_delta * t_delta;
-	particle.velocity += dir_to_attractor * t_delta;
+	particle.position += vec4(particle.velocity, 0) * t_delta + 0.5f * vec4(total_force, 0) * t_delta * t_delta;
+	particle.velocity += total_force * t_delta;
 
     // Set the particle's position back into the buffer
     particles[gl_VertexID] = particle;

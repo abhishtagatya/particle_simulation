@@ -29,6 +29,7 @@ protected:
 protected:
 	ShaderProgram pulsating_particle_program;
 	ShaderProgram attracting_particle_program;
+	ShaderProgram multi_attracting_particle_program;
 
 	// Variables (Frame Buffers)
 protected:
@@ -55,15 +56,18 @@ protected:
 	GLuint particle_buffer;
 
 	// -- Attracting Particles --
-	glm::vec3 attraction_point = glm::vec3(0.0f, 0.0f, 0.0f);
+	const int max_attractors = 10;
+	int attractor_used = 3;
+	std::vector<glm::vec3> attraction_points;
 	float attraction_force = 9.8f;
 
 protected:
 	/** The constants identifying what can be displayed on the screen. */
 	const int DISPLAY_PULSATING_SCENE = 0;
-	const int DISPLAY_ATTRACTING_SCENE = 1;
+	const int DISPLAY_SINGLE_ATTRACTOR_SCENE = 1;
+	const int DISPLAY_MULTI_ATTRACTOR_SCENE = 2;
 	
-	const char* DISPLAY_NAMES[2] = { "Sphere Pulsating Simulation", "Attracting Simulation"};
+	const char* DISPLAY_NAMES[3] = { "Sphere Pulsating", "Single Attractor", "Multi Attractor"};
 
 	int display_mode = DISPLAY_PULSATING_SCENE;
 
@@ -114,8 +118,11 @@ public:
 	/** Render Sphere Pulsating Simulation (DISPLAY_PULSATING_SCENE) */
 	void render_pulsating_simulation();
 
-	/** Render Attracting Particles Simulation (DISPLAY_ATTRACTING_SCENE) */
+	/** Render Attracting Particles Simulation (DISPLAY_SINGLE_ATTRACTOR_SCENE) */
 	void render_attracting_simulation();
+
+	/** Render Attracting Particles Simulation (DISPLAY_MULTI_ATTRACTOR_SCENE) */
+	void render_multi_attracting_simulation();
 
 public:
 	// Render
@@ -128,4 +135,8 @@ public:
 public:
 	// On Resize Callbak
 	void on_resize(int width, int height) override;
+
+public:
+	// Helper Functions
+	glm::vec3 random_inside_sphere(float radius);
 };
