@@ -1,0 +1,51 @@
+#version 450 core
+
+layout (local_size_x = 256) in;
+
+// The shader storage buffer with input positions.
+layout (std430, binding = 0) buffer PositionsInBuffer
+{
+	vec4 particle_positions_read[];
+};
+// The shader storage buffer with velocities.
+layout (std430, binding = 2) buffer VelocitiesBuffer
+{
+	vec4 particle_velocities[];
+};
+
+uniform int current_particle_count;
+
+uniform float t_delta;
+uniform float acceleration_factor;
+uniform float distance_threshold;
+
+layout (std430, binding = 1) buffer PositionsOutBuffer
+{
+	vec4 particle_positions_write[];
+};
+
+void main()
+{
+	vec3 position = vec3(particle_positions_read[gl_GlobalInvocationID.x]);
+	vec3 velocity = vec3(particle_velocities[gl_GlobalInvocationID.x]);
+
+	vec3 acceleration = vec3(0.0f);
+	for (int i = 0; i < current_particle_count; i++)
+	{
+		vec3 other = vec3(particle_positions_read[i]);
+		vec3 dir = other - position;
+		float dist_sq = dot(dir, dir);
+		if (dist_sq > distance_threshold)
+		{
+			acceleration += normalize(dir) / dist_sq;
+		}
+	}
+
+	acceleration *= acceleration_factor;
+
+    position += velocity * t_delta + 0.5f * acceleration * t_delta * t_delta;
+	velocity += acceleration * t_delta;
+
+	particle_positions_write[gl_GlobalInvocationID.x] = vec4(position, 1.0f);
+	particle_velocities[gl_GlobalInvocationID.x] = vec4(velocity, 0.0f);
+}

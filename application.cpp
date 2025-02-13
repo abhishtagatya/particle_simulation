@@ -47,6 +47,16 @@ void Application::compile_shaders() {
 	multi_attracting_particle_program.add_geometry_shader(lecture_shaders_path / "multi_attracting_particle.geom");
 	multi_attracting_particle_program.link();
 
+	nbody_particle_program = ShaderProgram();
+	nbody_particle_program.add_vertex_shader(lecture_shaders_path / "nbody_particle.vert");
+	nbody_particle_program.add_fragment_shader(lecture_shaders_path / "nbody_particle.frag");
+	nbody_particle_program.add_geometry_shader(lecture_shaders_path / "nbody_particle.geom");
+	nbody_particle_program.link();
+
+	nbody_update_program = ShaderProgram();
+	nbody_update_program.add_compute_shader(lecture_shaders_path / "nbody.comp");
+	nbody_update_program.link();
+
 	std::cout << "Shaders are reloaded." << std::endl;
 }
 
@@ -79,8 +89,53 @@ void Application::prepare_scene() {
 	particles.resize(max_particle_count); // Resize the vector to the maximum number of particles.
 	attraction_points.resize(max_attractors); // Resize the vector to the maximum number of attractors.
 
+	// For N-Body Simulation
+	particle_positions[0].resize(max_particle_count);
+	particle_positions[1].resize(max_particle_count);
+	particle_velocities.resize(max_particle_count);
+	
+	std::vector<glm::vec3> particle_colors(max_particle_count);
+	for (int i = 0; i < max_particle_count; i++) {
+		particle_colors[i] = glm::rgbColor(glm::vec3(static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 360.0f, 1.0f, 1.0f));
+	}
+
 	// Initializes the particle buffer.
 	glGenBuffers(1, &particle_buffer);
+
+	// Initializes the particle buffers (N-Body Simulation).
+	glCreateBuffers(2, particle_positions_buffer);
+	glCreateBuffers(1, &particle_velocities_buffer);
+	glCreateBuffers(1, &particle_colors_buffer);
+	glNamedBufferStorage(particle_positions_buffer[0], sizeof(float) * 4 * max_particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glNamedBufferStorage(particle_positions_buffer[1], sizeof(float) * 4 * max_particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glNamedBufferStorage(particle_velocities_buffer, sizeof(float) * 4 * max_particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glNamedBufferStorage(particle_colors_buffer, sizeof(float) * 3 * max_particle_count, particle_colors.data(), 0); // We can already upload the colors as they will not be changed.
+
+	// Setup VAOs for rendering particles. (N-Body Simulation)
+	glCreateVertexArrays(2, particle_vao);
+
+	glVertexArrayVertexBuffer(particle_vao[0], 0, particle_positions_buffer[0], 0, 4 * sizeof(float));
+	glVertexArrayVertexBuffer(particle_vao[0], 1, particle_colors_buffer, 0, 4 * sizeof(float));
+
+	glEnableVertexArrayAttrib(particle_vao[0], 0);
+	glVertexArrayAttribFormat(particle_vao[0], 0, 4, GL_FLOAT, GL_FALSE, 0);
+	glVertexArrayAttribBinding(particle_vao[0], 0, 0);
+
+	glEnableVertexArrayAttrib(particle_vao[0], 1);
+	glVertexArrayAttribFormat(particle_vao[0], 1, 4, GL_FLOAT, GL_FALSE, 0);
+	glVertexArrayAttribBinding(particle_vao[0], 1, 1);
+
+	glVertexArrayVertexBuffer(particle_vao[1], 0, particle_positions_buffer[0], 0, 4 * sizeof(float));
+	glVertexArrayVertexBuffer(particle_vao[1], 1, particle_colors_buffer, 0, 4 * sizeof(float));
+
+	glEnableVertexArrayAttrib(particle_vao[1], 0);
+	glVertexArrayAttribFormat(particle_vao[1], 0, 4, GL_FLOAT, GL_FALSE, 0);
+	glVertexArrayAttribBinding(particle_vao[1], 0, 0);
+
+	glEnableVertexArrayAttrib(particle_vao[1], 1);
+	glVertexArrayAttribFormat(particle_vao[1], 1, 4, GL_FLOAT, GL_FALSE, 0);
+	glVertexArrayAttribBinding(particle_vao[1], 1, 1);
+
 	reset_particles();
 }
 
@@ -119,6 +174,23 @@ void Application::reset_particles() {
 			particles[i].remaining = particles[i].lifetime;
 		}
 	}
+	else if (display_mode == DISPLAY_NBODY_SCENE) {
+		std::uniform_real_distribution<> vel_dist(-10.0f, 10.f);  // Random position value
+
+		// Zeroes the particle data.
+		for (int i = 0; i < current_particle_count; i++) {
+			// Initializes the particle position.
+			const float alpha = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f * static_cast<float>(M_PI);
+			const float beta = asinf(static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f);
+			glm::vec3 point_on_sphere = glm::vec3(cosf(alpha) * cosf(beta), sinf(alpha) * cosf(beta), sinf(beta));
+			
+			//glm::vec3 point_on_sphere = random_inside_sphere(10.0f);
+			
+			particle_positions[0][i] = glm::vec4(point_on_sphere, 1.0f);
+			particle_positions[1][i] = glm::vec4(point_on_sphere, 1.0f);
+			particle_velocities[i] = glm::vec4(0.0f);
+		}
+	}
 
 	// Updates the particle buffer.
 	update_particles_buffer();
@@ -145,13 +217,56 @@ glm::vec3 Application::random_inside_sphere(float radius) {
 void Application::update_particles_buffer() {
 	current_particle_count = desired_particle_count;
 
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_buffer);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Particle) * current_particle_count, particles.data(), GL_DYNAMIC_DRAW);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
+	std::cout << "---" << std::endl;
 	std::cout << "Desired particle count: " << current_particle_count << std::endl;
-	std::cout << "Particles buffer size: " << sizeof(Particle) * current_particle_count << " bytes." << std::endl;
+
+	if (display_mode == DISPLAY_NBODY_SCENE) 
+	{
+		glNamedBufferSubData(particle_positions_buffer[0], 0, sizeof(glm::vec4) * current_particle_count, particle_positions[0].data());
+		glNamedBufferSubData(particle_positions_buffer[1], 0, sizeof(glm::vec4) * current_particle_count, particle_positions[1].data());
+		glNamedBufferSubData(particle_velocities_buffer, 0, sizeof(glm::vec4) * current_particle_count, particle_velocities.data());
+
+		std::cout << "Particles buffer size: " << sizeof(float) * (4 + 4 + 3) * current_particle_count << " bytes." << std::endl;
+	}
+	else 
+	{
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_buffer);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Particle) * current_particle_count, particles.data(), GL_DYNAMIC_DRAW);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+		std::cout << "Particles buffer size: " << sizeof(Particle) * current_particle_count << " bytes." << std::endl;
+	}
+
 	std::cout << "Particles buffer updated." << std::endl;
+}
+
+// Update Particles on GPU
+void Application::update_particles_gpu()
+{
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particle_positions_buffer[current_read]);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particle_positions_buffer[current_write]);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, particle_velocities_buffer);
+
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+	nbody_update_program.use();
+	nbody_update_program.uniform("t_delta", (float)t_delta * 0.0001f);
+	nbody_update_program.uniform("current_particle_count", current_particle_count);
+	nbody_update_program.uniform("acceleration_factor", acceleration_factor);
+	nbody_update_program.uniform("distance_threshold", distance_threshold);
+
+	// Dispatches the compute shader and measures the elapsed time.
+	glBeginQuery(GL_TIME_ELAPSED, render_time_query);
+	glDispatchCompute(current_particle_count / local_size_x, 1, 1);
+	glEndQuery(GL_TIME_ELAPSED);
+
+	// Waits for OpenGL - don't forget OpenGL is asynchronous.
+	glFinish();
+
+	// Evaluates the query.
+	GLuint64 render_time;
+	glGetQueryObjectui64v(render_time_query, GL_QUERY_RESULT, &render_time);
+	compute_fps_gpu = 1000.f / (static_cast<float>(render_time) * 1e-6f);
 }
 
 // Update
@@ -165,6 +280,10 @@ void Application::update(float delta) {
 
 	// Updates the global time delta.
 	t_delta = delta;
+
+	if (display_mode == DISPLAY_NBODY_SCENE) {
+		update_particles_gpu();
+	}
 }
 
 // Pulsating Simulation (DISPLAY_PULSATING_SCENE)
@@ -251,6 +370,29 @@ void Application::render_multi_attracting_simulation() {
 	glDisable(GL_BLEND);
 }
 
+// N-Body Simulation (DISPLAY_NBODY_SCENE)
+void Application::render_nbody_simulation() {
+	glDepthMask(GL_FALSE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+
+	nbody_particle_program.use();
+	nbody_particle_program.uniform("particle_size_vs", particle_size);
+
+	// Binds the particle texture.
+	glBindTextureUnit(0, star_tex);
+
+	// Binds the particle buffer.
+	glBindVertexArray(particle_vao[current_write]);
+	glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+	glDrawArrays(GL_POINTS, 0, current_particle_count);
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+
+	std::swap(current_read, current_write);
+}
+
 // Render Scene
 void Application::render() {
 	// Starts measuring the elapsed time.
@@ -277,6 +419,9 @@ void Application::render() {
 	else if (display_mode == DISPLAY_MULTI_ATTRACTOR_SCENE) {
 		render_multi_attracting_simulation();
 	}
+	else if (display_mode == DISPLAY_NBODY_SCENE) {
+		render_nbody_simulation();
+	}
 
 	// Resets the VAO and the program.
 	glBindVertexArray(0);
@@ -289,9 +434,14 @@ void Application::render() {
 	glFinish();
 
 	// Evaluates the query.
-	GLuint64 render_time;
-	glGetQueryObjectui64v(render_time_query, GL_QUERY_RESULT, &render_time);
-	fps_gpu = 1000.f / (static_cast<float>(render_time) * 1e-6f);
+	if (display_mode != DISPLAY_NBODY_SCENE) {
+		GLuint64 render_time;
+		glGetQueryObjectui64v(render_time_query, GL_QUERY_RESULT, &render_time);
+		fps_gpu = 1000.f / (static_cast<float>(render_time) * 1e-6f);
+	}
+	else {
+		fps_gpu = compute_fps_gpu;
+	}
 }
 
 // GUI
@@ -339,6 +489,10 @@ void Application::render_ui() {
 			}
 			ImGui::SliderFloat("Force", &attraction_force, 0.1f, 25.0f, "%.1f");
 		}
+		else if (display_mode == DISPLAY_NBODY_SCENE) {
+			ImGui::SliderFloat("Acceleration Factor", &acceleration_factor, 0.1f, 5.0f, "%.1f");
+			ImGui::SliderFloat("Distance Threshold", &distance_threshold, 0.001f, 0.1f, "%.3f");
+		}
 	}
 
 	ImGui::End();
@@ -347,4 +501,16 @@ void Application::render_ui() {
 void Application::on_resize(int width, int height) {
 	PV227Application::on_resize(width, height);
 	resize_fullscreen_textures();
+}
+
+void Application::on_key_pressed(int key, int scancode, int action, int mods) {
+	PV227Application::on_key_pressed(key, scancode, action, mods);
+
+	if (action == GLFW_PRESS) {
+		switch (key) {
+		case GLFW_KEY_SPACE:
+			reset_particles();
+			break;
+		}
+	}
 }

@@ -30,6 +30,8 @@ protected:
 	ShaderProgram pulsating_particle_program;
 	ShaderProgram attracting_particle_program;
 	ShaderProgram multi_attracting_particle_program;
+	ShaderProgram nbody_particle_program;
+	ShaderProgram nbody_update_program;
 
 	// Variables (Frame Buffers)
 protected:
@@ -61,13 +63,33 @@ protected:
 	std::vector<glm::vec3> attraction_points;
 	float attraction_force = 9.8f;
 
+	// -- N-Body Particles --
+	std::vector<glm::vec4> particle_positions[2];
+	std::vector<glm::vec4> particle_velocities;
+	GLuint particle_positions_buffer[2];
+	GLuint particle_velocities_buffer;
+	GLuint particle_colors_buffer;
+	GLuint particle_vao[2];
+
+	int current_read = 0;
+	int current_write = 1;
+
+	float acceleration_factor = 0.2f;
+	float distance_threshold = 0.01f;
+
+	// This must be the same as 'layout (local_size_x = 256) in;' in nbody_(shared).comp
+	const int local_size_x = 256;
+
+	float compute_fps_gpu;
+
 protected:
 	/** The constants identifying what can be displayed on the screen. */
 	const int DISPLAY_PULSATING_SCENE = 0;
 	const int DISPLAY_SINGLE_ATTRACTOR_SCENE = 1;
 	const int DISPLAY_MULTI_ATTRACTOR_SCENE = 2;
+	const int DISPLAY_NBODY_SCENE = 3;
 	
-	const char* DISPLAY_NAMES[3] = { "Sphere Pulsating", "Single Attractor", "Multi Attractor"};
+	const char* DISPLAY_NAMES[4] = { "Sphere Pulsating", "Single Attractor", "Multi Attractor", "N-Body"};
 
 	int display_mode = DISPLAY_PULSATING_SCENE;
 
@@ -113,6 +135,9 @@ public:
 	// Update
 	void update(float delta) override;
 
+	/** Updates the particles on GPU */
+	void update_particles_gpu();
+
 	// Render Modes
 public:
 	/** Render Sphere Pulsating Simulation (DISPLAY_PULSATING_SCENE) */
@@ -123,6 +148,9 @@ public:
 
 	/** Render Attracting Particles Simulation (DISPLAY_MULTI_ATTRACTOR_SCENE) */
 	void render_multi_attracting_simulation();
+
+	/** Render N-Body Simulation (DISPLAY_NBODY_SCENE) */
+	void render_nbody_simulation();
 
 public:
 	// Render
@@ -135,6 +163,10 @@ public:
 public:
 	// On Resize Callbak
 	void on_resize(int width, int height) override;
+
+public:
+	// On Key Pressed Callback
+	void on_key_pressed(int key, int scancode, int action, int mods) override;
 
 public:
 	// Helper Functions
