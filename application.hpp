@@ -36,6 +36,7 @@ protected:
 	// Variables (Frame Buffers)
 protected:
 	// Variables (GUI)
+	bool show_ui = true;
 protected:
 	// Variables (Particles)
 

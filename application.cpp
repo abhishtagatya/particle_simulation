@@ -446,6 +446,9 @@ void Application::render() {
 
 // GUI
 void Application::render_ui() {
+
+	if (!show_ui) return;
+
 	const float unit = ImGui::GetFontSize();
 
 	ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
@@ -510,6 +513,9 @@ void Application::on_key_pressed(int key, int scancode, int action, int mods) {
 		switch (key) {
 		case GLFW_KEY_SPACE:
 			reset_particles();
+			break;
+		case GLFW_KEY_H:
+			show_ui = !show_ui;
 			break;
 		}
 	}
