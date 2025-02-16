@@ -1,0 +1,13 @@
+# Blender 4.2.3 LTS MTL File: 'None'
+# www.blender.org
+
+newmtl staue1.002
+Ns 319.999939
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -o 0 -1 0 C:/Users/abhis/Projects/SOF4/levels/bakes/gargoyles/staue1Color.png
+map_Bump -o 0 -1 0 -bm 1.000000 C:/Users/abhis/Projects/SOF4/levels/bakes/gargoyles/staue1Normal.png

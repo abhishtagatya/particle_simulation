@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "model_ubo.hpp"
 #include "utils.hpp"
+#include "tiny_obj_loader.h"
 #include <random>
 
 Application::Application(int initial_width, int initial_height, std::vector<std::string> arguments)
@@ -57,7 +58,59 @@ void Application::compile_shaders() {
 	nbody_update_program.add_compute_shader(lecture_shaders_path / "nbody.comp");
 	nbody_update_program.link();
 
+	particle_surface_estimator_program = ShaderProgram();
+	particle_surface_estimator_program.add_vertex_shader(lecture_shaders_path / "surface_estimator.vert");
+	particle_surface_estimator_program.add_fragment_shader(lecture_shaders_path / "surface_estimator.frag");
+	particle_surface_estimator_program.add_geometry_shader(lecture_shaders_path / "surface_estimator.geom");
+	particle_surface_estimator_program.link();
+
 	std::cout << "Shaders are reloaded." << std::endl;
+}
+
+void Application::from_file(std::filesystem::path path, bool center_vertices) {
+	const std::string extension = path.extension().generic_string();
+
+	if (extension == ".obj") {
+		tinyobj::ObjReader reader;
+
+		if (!reader.ParseFromFile(path.generic_string())) {
+			if (!reader.Error().empty()) {
+				std::cerr << "TinyObjReader: " << reader.Error();
+			}
+		}
+
+		if (!reader.Warning().empty()) {
+			std::cerr << "TinyObjReader: " << reader.Warning();
+		}
+
+		auto& attrib = reader.GetAttrib();
+		auto& shapes = reader.GetShapes();
+		auto& materials = reader.GetMaterials();
+
+		const tinyobj::shape_t& shape = shapes[0];
+
+		glm::vec3 min{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+		glm::vec3 max{ std::numeric_limits<float>::min(), std::numeric_limits<float>::min(), std::numeric_limits<float>::min() };
+
+		mesh.positions.clear();
+		mesh.indices.clear();
+
+		int vertex_count = 0;
+		for (size_t i = 0; i < attrib.vertices.size() / 3; i++) {
+			mesh.positions.insert(mesh.positions.end(), glm::vec4(attrib.vertices[3 * i + 0], attrib.vertices[3 * i + 1], attrib.vertices[3 * i + 2], 1.0f));
+			vertex_count++;
+		}
+		model_vertex_count = vertex_count;
+
+		int index_count = 0;
+		for (const auto& shape : shapes) {
+			for (const auto& index : shape.mesh.indices) {
+				mesh.indices.insert(mesh.indices.end(), index.vertex_index);
+				index_count++;
+			}
+		}
+		model_index_count = index_count;
+	}
 }
 
 // Initialize Scene
@@ -99,9 +152,6 @@ void Application::prepare_scene() {
 		particle_colors[i] = glm::rgbColor(glm::vec3(static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 360.0f, 1.0f, 1.0f));
 	}
 
-	// Initializes the particle buffer.
-	glGenBuffers(1, &particle_buffer);
-
 	// Initializes the particle buffers (N-Body Simulation).
 	glCreateBuffers(2, particle_positions_buffer);
 	glCreateBuffers(1, &particle_velocities_buffer);
@@ -135,8 +185,15 @@ void Application::prepare_scene() {
 	glEnableVertexArrayAttrib(particle_vao[1], 1);
 	glVertexArrayAttribFormat(particle_vao[1], 1, 4, GL_FLOAT, GL_FALSE, 0);
 	glVertexArrayAttribBinding(particle_vao[1], 1, 1);
+	// End For N-Body Simulation
+
+	// Initializes the particle buffer.
+	glGenBuffers(1, &particle_buffer);
+	glGenBuffers(1, &mesh_position_buffer);
+	glGenBuffers(1, &mesh_index_buffer);
 
 	reset_particles();
+	update_model();
 }
 
 // Framebuffers
@@ -175,8 +232,6 @@ void Application::reset_particles() {
 		}
 	}
 	else if (display_mode == DISPLAY_NBODY_SCENE) {
-		std::uniform_real_distribution<> vel_dist(-10.0f, 10.f);  // Random position value
-
 		// Zeroes the particle data.
 		for (int i = 0; i < current_particle_count; i++) {
 			// Initializes the particle position.
@@ -189,6 +244,15 @@ void Application::reset_particles() {
 			particle_positions[0][i] = glm::vec4(point_on_sphere, 1.0f);
 			particle_positions[1][i] = glm::vec4(point_on_sphere, 1.0f);
 			particle_velocities[i] = glm::vec4(0.0f);
+		}
+	}
+	else if (display_mode == DISPLAY_PARTICLE_SURFACE_ESTIMATOR_SCENE) {
+
+		// Zeroes the particle data.
+		for (int i = 0; i < current_particle_count; i++) {
+			// Initializes the particle position.
+			particles[i].position = glm::vec4(random_inside_sphere(25.0f), 1.0f);;
+			particles[i].velocity = glm::vec3(0.0f);
 		}
 	}
 
@@ -238,6 +302,26 @@ void Application::update_particles_buffer() {
 	}
 
 	std::cout << "Particles buffer updated." << std::endl;
+}
+
+void Application::update_model() {
+	from_file(lecture_folder_path / MODEL_PATHS[current_model], false);
+
+	size_t position_size = sizeof(glm::vec4) * mesh.positions.size();
+	size_t index_size = sizeof(int) * mesh.indices.size();
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, mesh_position_buffer);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, position_size, mesh.positions.data(), GL_DYNAMIC_READ);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, mesh_index_buffer);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, index_size, mesh.indices.data(), GL_DYNAMIC_READ);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	std::cout << "Model Vertex Count: " << model_vertex_count << std::endl;
+	std::cout << "Model Index Count: " << model_index_count << std::endl;
+	std::cout << "Model Buffer Size: " << position_size + index_size << " bytes." << std::endl;
+	std::cout << "Model Updated." << std::endl;
 }
 
 // Update Particles on GPU
@@ -393,6 +477,34 @@ void Application::render_nbody_simulation() {
 	std::swap(current_read, current_write);
 }
 
+void Application::render_surface_estimator() {
+	glDepthMask(GL_FALSE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+
+	particle_surface_estimator_program.use();
+	particle_surface_estimator_program.uniform("t_time", (float)elapsed_time);
+	particle_surface_estimator_program.uniform("t_delta", (float)t_delta * 0.0001f);
+	particle_surface_estimator_program.uniform("vertex_count", model_vertex_count);
+	particle_surface_estimator_program.uniform("index_count", model_index_count);
+	particle_surface_estimator_program.uniform("particle_size_vs", particle_size);
+
+	// Binds the particle texture.
+	glBindTextureUnit(0, star_tex);
+
+	// Binds the particle buffer.
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, particle_buffer);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mesh_position_buffer);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mesh_index_buffer);
+
+	// Renders the particles.
+	glBindVertexArray(empty_vao);
+	glDrawArrays(GL_POINTS, 0, current_particle_count);
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+}
+
 // Render Scene
 void Application::render() {
 	// Starts measuring the elapsed time.
@@ -421,6 +533,9 @@ void Application::render() {
 	}
 	else if (display_mode == DISPLAY_NBODY_SCENE) {
 		render_nbody_simulation();
+	}
+	else if (display_mode == DISPLAY_PARTICLE_SURFACE_ESTIMATOR_SCENE) {
+		render_surface_estimator();
 	}
 
 	// Resets the VAO and the program.
@@ -495,6 +610,11 @@ void Application::render_ui() {
 		else if (display_mode == DISPLAY_NBODY_SCENE) {
 			ImGui::SliderFloat("Acceleration Factor", &acceleration_factor, 0.1f, 5.0f, "%.1f");
 			ImGui::SliderFloat("Distance Threshold", &distance_threshold, 0.001f, 0.1f, "%.3f");
+		}
+		else if (display_mode == DISPLAY_PARTICLE_SURFACE_ESTIMATOR_SCENE) {
+			if (ImGui::Combo("Model", &current_model, MODEL_NAMES, IM_ARRAYSIZE(MODEL_NAMES))) {
+				update_model();
+			}
 		}
 	}
 

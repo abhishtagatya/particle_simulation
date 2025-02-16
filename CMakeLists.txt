@@ -8,4 +8,4 @@
 ################################################################################
 
 # Generates the lecture.
-visitlab_generate_lecture(PV227 partcile_simulation)
+visitlab_generate_lecture(PV227 particle_simulation)

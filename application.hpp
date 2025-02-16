@@ -14,6 +14,11 @@ struct Particle {
 	float remaining; // The remaining time of the particle
 };
 
+struct Mesh {
+	std::vector<glm::vec4> positions;
+	std::vector<int> indices;
+};
+
 class Application : public PV227Application {
 	// Variables (Geometry)
 protected:
@@ -32,6 +37,7 @@ protected:
 	ShaderProgram multi_attracting_particle_program;
 	ShaderProgram nbody_particle_program;
 	ShaderProgram nbody_update_program;
+	ShaderProgram particle_surface_estimator_program;
 
 	// Variables (Frame Buffers)
 protected:
@@ -83,14 +89,42 @@ protected:
 
 	float compute_fps_gpu;
 
+	// -- Particle Surface Estimator --
+	Mesh mesh;
+	GLuint mesh_position_buffer;
+	GLuint mesh_index_buffer;
+
+	const std::string GOLEM_MODEL = "models/golem.obj";
+	const std::string CUBE_MODEL = "models/cube.obj";
+	const std::string TORUS_MODEL = "models/torus.obj";
+	const std::string MONKEY_MODEL = "models/monkey.obj";
+	const std::string STATUE_MODEL = "models/statue.obj";
+	const std::string TOWER_MODEL = "models/tower.obj";
+
+	const int SELECT_GOLEM_MODEL = 0;
+	const int SELECT_CUBE_MODEL = 1;
+	const int SELECT_TORUS_MODEL = 2;
+	const int SELECT_MONKEY_MODEL = 3;
+	const int SELECT_STATUE_MODEL = 4;
+	const int SELECT_TOWER_MODEL = 5;
+
+	const char* MODEL_PATHS[6] = { GOLEM_MODEL.c_str(), CUBE_MODEL.c_str(), TORUS_MODEL.c_str(), MONKEY_MODEL.c_str(), STATUE_MODEL.c_str(), TOWER_MODEL.c_str() };
+	const char* MODEL_NAMES[6] = { "Golem", "Cube", "Torus", "Monkey", "Statue", "Tower"};
+
+	int current_model = SELECT_GOLEM_MODEL;
+
+	int model_vertex_count = 0;
+	int model_index_count = 0;
+
 protected:
 	/** The constants identifying what can be displayed on the screen. */
 	const int DISPLAY_PULSATING_SCENE = 0;
 	const int DISPLAY_SINGLE_ATTRACTOR_SCENE = 1;
 	const int DISPLAY_MULTI_ATTRACTOR_SCENE = 2;
 	const int DISPLAY_NBODY_SCENE = 3;
+	const int DISPLAY_PARTICLE_SURFACE_ESTIMATOR_SCENE = 4;
 	
-	const char* DISPLAY_NAMES[4] = { "Sphere Pulsating", "Single Attractor", "Multi Attractor", "N-Body"};
+	const char* DISPLAY_NAMES[5] = { "Sphere Pulsating", "Single Attractor", "Multi Attractor", "N-Body", "Particle-Surface Est."};
 
 	int display_mode = DISPLAY_PULSATING_SCENE;
 
@@ -139,6 +173,9 @@ public:
 	/** Updates the particles on GPU */
 	void update_particles_gpu();
 
+	/** Updates the selected model */
+	void update_model();
+
 	// Render Modes
 public:
 	/** Render Sphere Pulsating Simulation (DISPLAY_PULSATING_SCENE) */
@@ -152,6 +189,9 @@ public:
 
 	/** Render N-Body Simulation (DISPLAY_NBODY_SCENE) */
 	void render_nbody_simulation();
+
+	/** Render Particle Surface Estimator (DISPLAY_PARTICLE_SURFACE_ESTIMATOR_SCENE) */
+	void render_surface_estimator();
 
 public:
 	// Render
@@ -172,4 +212,5 @@ public:
 public:
 	// Helper Functions
 	glm::vec3 random_inside_sphere(float radius);
+	void from_file(std::filesystem::path path, bool center_vertices);
 };
